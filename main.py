@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from routes import upload, extract, generate, review, submit, history
+from routes import upload, extract, generate, review, submit, history, upload_images, extract_images
 from db import Base, engine
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -22,3 +22,5 @@ app.include_router(generate.router)
 app.include_router(review.router)
 app.include_router(submit.router)
 app.include_router(history.router)
+app.include_router(upload_images.router)
+app.include_router(extract_images.router)

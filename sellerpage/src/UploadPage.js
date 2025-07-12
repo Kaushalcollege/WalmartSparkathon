@@ -3,11 +3,16 @@ import React, { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 export default function UploadPage() {
-  const inputRef = useRef();
+  const pdfInputRef = useRef();
+  const imgInputRef = useRef();
   const [dragActive, setDragActive] = useState(false);
+
   const [uploading, setUploading] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [selectedImages, setSelectedImages] = useState([]);
   const navigate = useNavigate();
 
+  // --- PDF Upload Handlers ---
   const handleDrag = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -65,18 +70,55 @@ export default function UploadPage() {
     }
   }
 
+  // --- Image Upload Handlers ---
+  const handleImageSelect = (e) => {
+    setSelectedImages([...e.target.files]);
+  };
+
+  async function handleImageUpload() {
+    if (!selectedImages.length) return;
+    setImageUploading(true);
+    try {
+      const formData = new FormData();
+      selectedImages.forEach((img) => formData.append("files", img));
+      const uploadRes = await fetch("http://127.0.0.1:8000/upload-images", {
+        method: "POST",
+        body: formData,
+      });
+      const { session_id } = await uploadRes.json();
+
+      // Extract
+      await fetch("http://127.0.0.1:8000/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id }),
+      });
+
+      // Generate
+      const genRes = await fetch("http://127.0.0.1:8000/generate-fields", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id }),
+      });
+      const genJson = await genRes.json();
+      const fields = genJson.fields || {};
+
+      // Redirect
+      navigate("/seller", { state: { fields } });
+    } catch (e) {
+      alert("Image extraction failed.");
+      console.error(e);
+    } finally {
+      setImageUploading(false);
+      setSelectedImages([]);
+    }
+  }
+
+  // --- UI Render ---
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div
-        className={`w-full max-w-md p-8 rounded-2xl shadow-xl bg-white border border-gray-200 flex flex-col items-center transition ${
-          dragActive ? "ring-2 ring-blue-400" : ""
-        }`}
-        onDragEnter={handleDrag}
-        onDragOver={handleDrag}
-        onDragLeave={handleDrag}
-        onDrop={handleDrop}
-      >
-        {/* SVG */}
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
+      <div className="w-full max-w-md p-8 rounded-2xl shadow-xl bg-white border border-gray-200 flex flex-col items-center">
+        {/* PDF Upload Section */}
         <svg
           width="56"
           height="56"
@@ -94,23 +136,67 @@ export default function UploadPage() {
           />
         </svg>
         <h2 className="font-bold text-xl mb-2">Upload</h2>
-        <p className="text-gray-500 mb-6">
-          Upload a Product Specification Document.
-        </p>
+        <p className="text-gray-500 mb-6">Upload a Document or Image(s).</p>
         <input
           type="file"
           accept="application/pdf"
-          ref={inputRef}
+          ref={pdfInputRef}
           style={{ display: "none" }}
           onChange={handleSelect}
         />
         <button
-          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg shadow transition"
-          onClick={() => inputRef.current.click()}
-          disabled={uploading}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg shadow transition mb-3"
+          onClick={() => pdfInputRef.current.click()}
+          disabled={uploading || imageUploading}
         >
           {uploading ? "Processing..." : "Select PDF"}
         </button>
+
+        {/* OR separator */}
+        <div className="my-3 flex items-center w-full">
+          <div className="flex-1 h-px bg-gray-200"></div>
+          <span className="px-2 text-gray-400 text-sm">or</span>
+          <div className="flex-1 h-px bg-gray-200"></div>
+        </div>
+
+        {/* Image Upload Section */}
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          ref={imgInputRef}
+          style={{ display: "none" }}
+          onChange={handleImageSelect}
+        />
+        <button
+          className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg shadow transition"
+          onClick={() => imgInputRef.current.click()}
+          disabled={imageUploading || uploading}
+        >
+          {imageUploading ? "Processing..." : "Select Images"}
+        </button>
+
+        {selectedImages.length > 0 && (
+          <div className="my-4 w-full">
+            <div className="flex flex-wrap gap-2 mb-2">
+              {selectedImages.map((img, idx) => (
+                <img
+                  key={idx}
+                  src={URL.createObjectURL(img)}
+                  alt={`Selected ${idx}`}
+                  className="w-16 h-16 object-cover rounded shadow"
+                />
+              ))}
+            </div>
+            <button
+              className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded shadow w-full"
+              onClick={handleImageUpload}
+              disabled={imageUploading}
+            >
+              {imageUploading ? "Processing..." : "Done"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
