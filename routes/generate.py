@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+# routes/generate.py
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from schemas.schemas import GenerateRequest
 from models import ProductSession
@@ -18,9 +19,10 @@ def get_db():
 def generate(req: GenerateRequest, db: Session = Depends(get_db)):
     session = db.query(ProductSession).filter_by(session_id=req.session_id).first()
     if not session or not session.raw_text:
-        return {"error": "Missing raw text"}
+        raise HTTPException(status_code=400, detail="Raw text missing; please call /extract first")
 
-    fields = generate_fields(session.raw_text)
-    session.fields = fields
+    result = generate_fields(session.raw_text)
+    parsed = result.get("fields", {})
+    session.fields = parsed
     db.commit()
-    return {"fields": fields}
+    return {"fields": parsed}

@@ -1,47 +1,66 @@
-import requests
-import re
-
 import os
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+import re
+import requests
 
+# Load your GROQ API key from environment for security
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 
 def extract_structured_fields(response_text: str) -> dict:
     """
-    Parse LLM response into structured JSON.
+    Parse LLM Markdown response into a structured dict.
+    Supports bolded keys (**Key**:) and falls back to plain Key: lines.
     """
-
     fields = {}
 
+    # 1️⃣ Primary extraction: look for **Key**: Value lines
     matches = re.findall(r"\*\*(.*?)\*\*:\s*(.+)", response_text)
+    if not matches:
+        # 2️⃣ Fallback extraction: plain Key: Value (multi-line support)
+        matches = re.findall(r"^([\w &]+):\s*(.+)$", response_text, flags=re.MULTILINE)
+
     for key, value in matches:
-        
+        key = key.strip()
+        # If this field contains bullet lists, split into Python list
         if key.lower().startswith("key features") or key.lower().startswith("compliance tags"):
-            value = [line.strip("* ").strip() for line in value.strip().split("\n") if line.strip()]
-        fields[key.strip()] = value
+            lines = value.strip().split("\n")
+            value = [line.strip("* ").strip() for line in lines if line.strip()]
+        else:
+            value = value.strip()
+        fields[key] = value
 
     return fields
 
+
 def generate_fields(text: str) -> dict:
-    prompt = f"""
-    Extract the following structured fields from the given product text, and return values that best fit the form:
-
-    - Product ID (if present, else skip)
-    - SKU
-    - Product name
-    - Site description
-    - Key features (in bullet points)
-    - Brand name
-    - Fulfillment option (e.g., Seller Fulfilled, Walmart Fulfilled)
-    - Type of condition (e.g., New, Used, Refurbished)
-    - Image URLs (if available, else skip)
-
-    Make sure the values are concise and clean, suitable to be filled into form fields on a product listing page.
-
-    TEXT:
-    {text[:3000]}
     """
+    Call the LLM to extract structured product listing fields from raw text.
+    The LLM is prompted to output bolded keys and values for easy parsing.
+    """
+    prompt = f"""
+Extract the following structured fields from this product text.  
+For each field, output the field name **bolded** followed by a colon and its value:
 
+**Product ID**:  
+**EAN**:
+**GTIN**:
+**ISBN**:
+**UPC**:
+**Category**:
+**Subcategory**:
+**SKU**:  
+**Product name**:  
+**Site description**:  
+**Key features**:  
+**Brand name**:  
+**Fulfillment option**:  
+**Type of condition**:  
+**Image URLs**:  
+**Selling Price**:  
+
+TEXT:
+{text[:3000]}
+"""
 
     try:
         response = requests.post(
@@ -63,15 +82,15 @@ def generate_fields(text: str) -> dict:
 
         response.raise_for_status()
         result = response.json()
+
         raw_text = result["choices"][0]["message"]["content"]
 
-        # Parsing response to json
+        # Parse LLM output into structured dict
         parsed_fields = extract_structured_fields(raw_text)
-
         return {"fields": parsed_fields}
 
     except requests.exceptions.RequestException as e:
-        print("Request failed:", e)
+        print("LLM request failed:", e)
         return {"fields": {"error": "LLM request failed"}}
     except (KeyError, IndexError) as e:
         print("Parsing error:", e)
