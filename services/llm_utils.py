@@ -5,7 +5,6 @@ import requests
 # Load your GROQ API key from environment for security
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-
 def extract_structured_fields(response_text: str) -> dict:
     """
     Parse LLM Markdown response into a structured dict.
@@ -31,34 +30,46 @@ def extract_structured_fields(response_text: str) -> dict:
 
     return fields
 
-
 def generate_fields(text: str) -> dict:
     """
     Call the LLM to extract structured product listing fields from raw text.
     The LLM is prompted to output bolded keys and values for easy parsing.
     """
     prompt = f"""
-Extract the following structured fields from this product text.  
-For each field, output the field name **bolded** followed by a colon and its value:
+You are an elite information extraction agent.
+You will receive raw OCR or text dump from a real-world product PDF. The input may contain:
+- Visual clutter (headers, footers, page numbers, colored or rotated text, decorative elements)
+- Tables, lists, icons, or unusual formatting
+- Random symbols, breaks, and noise from OCR
 
-**Product ID**:  
+Your job:
+1. Extract ONLY the required product fields (ignore all irrelevant/extra content).
+2. Be robust to jumbled order, mixed or missing fields, and formatting errors.
+3. If a field is absent, return "Not available".
+4. For fields with multiple values (like images, features), return one bullet per line.
+5. Output must be a pure key-value list, with **BOLD** keys and a colon for each, no extra text.
+
+**Fields (always output these, even if "Not available"):**
+
+**Product ID**:
 **EAN**:
 **GTIN**:
 **ISBN**:
 **UPC**:
 **Category**:
 **Subcategory**:
-**SKU**:  
-**Product name**:  
-**Site description**:  
-**Key features**:  
-**Brand name**:  
-**Fulfillment option**:  
-**Type of condition**:  
-**Image URLs**:  
-**Selling Price**:  
+**SKU**:
+**Product name**:
+**Site description**:
+**Key features**:
+**Brand name**:
+**Fulfillment option**:
+**Type of condition**:
+**Image URLs**:
+**Selling Price**:
 
-TEXT:
+--- Begin product PDF content (up to 3000 characters) ---
+
 {text[:3000]}
 """
 
@@ -72,10 +83,10 @@ TEXT:
             json={
                 "model": "llama3-70b-8192",
                 "messages": [
-                    {"role": "system", "content": "You are an AI that extracts product listing data in structured format."},
+                    {"role": "system", "content": "You are an AI that extracts product listing data in a highly structured format."},
                     {"role": "user", "content": prompt}
                 ],
-                "temperature": 0.3
+                "temperature": 0.2
             },
             timeout=20
         )

@@ -1,6 +1,6 @@
 import os
 import pdfplumber
-import fitz                     # PyMuPDF
+import fitz  # PyMuPDF
 from io import StringIO
 from pdfminer.high_level import extract_text_to_fp
 from PIL import Image
@@ -29,9 +29,9 @@ def extract_text_pdfminer(filepath: str) -> str:
     return output.getvalue()
 
 def ocr_page(page) -> str:
-    # Convert pdfplumber page to PIL image at 300 DPI
+    # page.to_image(resolution=300).original is already a PIL Image
     pil = page.to_image(resolution=300).original
-    return pytesseract.image_to_string(Image.fromarray(pil))
+    return pytesseract.image_to_string(pil)  # FIX: use pil directly!
 
 def extract_text_from_pdf(filepath: str) -> str:
     # 1. Try pdfplumber

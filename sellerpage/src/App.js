@@ -1,60 +1,17 @@
 // src/App.js
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import sampleImage from "./sample.png";
-
-const categoriesData = {
-  Animals: {
-    "Animal Feeding & Watering": [
-      "Automatic Pet Feeder",
-      "Bee Guards",
-      "Bird Feeder Domes & Baffles",
-      "Bird Feeders",
-      "Butterfly Feeders",
-      "Feed Scoops",
-      "Hay Nets",
-      "Hog Feeders",
-      "Hog Watering Nipples",
-      "Hummingbird Feeders",
-      "Outdoor Bird Bath Stands",
-      "Outdoor Bird Baths",
-    ],
-    "Animal Food": ["Dog Kennel", "Cat Tree"],
-    "Animal Grooming": [
-      "Animal Feed",
-      "Bird Food",
-      "Bird Seed Cakes",
-      "Bird Treats",
-      "Butterfly Nectar",
-      "Cat Food",
-      "Cat Treats",
-      "Dog Food",
-      "Dog Treats",
-      "Fish Food",
-      "Hummingbird Nectar",
-      "Poultry Feed",
-      "Reptile Food",
-      "Small Animal Food",
-      "Small Animal Treats",
-      "Squirrel & Critter Food",
-      "Wild Bird Feed",
-    ],
-    /* …other subcategories… */
-  },
-  Electronics: {
-    "Phones & Tablets": ["Smartphone", "Tablet"],
-    Computers: ["Laptop", "Monitor"],
-  },
-  Fashion: {
-    Men: ["Shirts", "Jeans"],
-    Women: ["Dresses", "Shoes"],
-  },
-};
+import axios from "axios";
 
 export default function App() {
-  // ▶️ Expand your form state to include all LLM-extracted fields
+  const location = useLocation();
+  const navigate = useNavigate();
+  const extractedFields = location.state?.fields || {};
+
   const [form, setForm] = useState({
     productId: "",
-    idType: "", // GTIN/UPC/…
+    idType: "",
     sku: "",
     productName: "",
     siteDescription: "",
@@ -69,119 +26,132 @@ export default function App() {
     productType: "",
   });
 
-  const [pdfFile, setPdfFile] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadMessage, setUploadMessage] = useState("");
-  const [previewImage, setPreviewImage] = useState(null);
+  const [categoryOptions, setCategoryOptions] = useState([]);
+  const [subcategoryOptions, setSubcategoryOptions] = useState([]);
+  const [productTypeOptions, setProductTypeOptions] = useState([]);
+  const [llmLoading, setLlmLoading] = useState(false);
 
-  // 1️⃣ Generic form change handler
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    // If category changes, reset subcategory & productType
+  // ----------- LLM-powered options fetcher -----------
+  const fetchLlmOptions = async (category, subcategory) => {
+    setLlmLoading(true);
+    try {
+      const res = await axios.post("http://localhost:8001/match-categories", {
+        extracted_category: category || extractedFields["Category"] || "",
+        extracted_subcategory:
+          subcategory || extractedFields["Subcategory"] || "",
+        extracted_product_type: extractedFields["Product Type"] || "",
+        product_name: extractedFields["Product name"] || "",
+      });
+      setForm((prev) => ({
+        ...prev,
+        category: res.data.category || "",
+        subcategory: res.data.subcategory || "",
+        productType: res.data.product_type || "",
+      }));
+      setCategoryOptions(res.data.category_options || []);
+      setSubcategoryOptions(res.data.subcategory_options || []);
+      setProductTypeOptions(res.data.product_type_options || []);
+    } catch (err) {
+      setCategoryOptions([]);
+      setSubcategoryOptions([]);
+      setProductTypeOptions([]);
+    }
+    setLlmLoading(false);
+  };
+
+  // ----------- On mount: get options from LLM -----------
+  useEffect(() => {
+    if (!extractedFields || Object.keys(extractedFields).length === 0) return;
+    fetchLlmOptions();
+    // eslint-disable-next-line
+  }, [extractedFields]);
+
+  // ----------- Fill other fields on mount -----------
+  useEffect(() => {
+    const idTypesPriority = ["EAN", "GTIN", "ISBN", "UPC"];
+    let detectedIdType = "";
+    let detectedIdValue = "";
+
+    for (const idType of idTypesPriority) {
+      const value = extractedFields[idType];
+      if (value && value !== "Not available") {
+        detectedIdType = idType;
+        detectedIdValue = value;
+        break;
+      }
+    }
+    if (!detectedIdType) {
+      detectedIdType = extractedFields["ID Type"] || "";
+      detectedIdValue = extractedFields["Product ID"] || "";
+    }
+
     setForm((prev) => ({
       ...prev,
-      [name]: value,
-      ...(name === "category" ? { subcategory: "", productType: "" } : {}),
-      ...(name === "subcategory" ? { productType: "" } : {}),
+      productId: detectedIdValue || "",
+      idType: detectedIdType || "",
+      sku: extractedFields["SKU"] || "",
+      productName: extractedFields["Product name"] || "",
+      siteDescription: extractedFields["Site description"] || "",
+      keyFeatures: Array.isArray(extractedFields["Key features"])
+        ? extractedFields["Key features"].join("\n- ")
+        : extractedFields["Key features"] || "",
+      brandName: extractedFields["Brand name"] || "",
+      fulfillmentOption: extractedFields["Fulfillment option"] || "",
+      condition: extractedFields["Type of condition"] || "",
+      sellingPrice: extractedFields["Selling Price"] || "",
+      imageUrl: Array.isArray(extractedFields["Image URLs"])
+        ? extractedFields["Image URLs"][0]
+        : extractedFields["Image URLs"] || "",
+    }));
+    // eslint-disable-next-line
+  }, [extractedFields]);
+
+  // ----------- Dynamic Dropdown Handlers -----------
+  const handleCategoryChange = async (e) => {
+    const value = e.target.value;
+    setForm((prev) => ({
+      ...prev,
+      category: value,
+      subcategory: "",
+      productType: "",
+    }));
+    await fetchLlmOptions(value, "");
+  };
+  const handleSubcategoryChange = async (e) => {
+    const value = e.target.value;
+    setForm((prev) => ({
+      ...prev,
+      subcategory: value,
+      productType: "",
+    }));
+    await fetchLlmOptions(form.category, value);
+  };
+  const handleProductTypeChange = (e) => {
+    setForm((prev) => ({
+      ...prev,
+      productType: e.target.value,
     }));
   };
 
-  // 2️⃣ File selector for PDF
-  const handleFileChange = (e) => {
-    setPdfFile(e.target.files[0]);
+  // ----------- Generic Field Handler -----------
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
   };
 
-  // 3️⃣ Image upload preview
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setPreviewImage(URL.createObjectURL(file));
-      // also store the URL or file object if you need to submit
-      setForm((prev) => ({ ...prev, imageUrl: URL.createObjectURL(file) }));
-    }
-  };
-
-  // 4️⃣ Upload PDF → extract → generate fields → populate form
-  const handleFileUpload = async () => {
-    if (!pdfFile) return;
-    setUploading(true);
-    setUploadMessage("Uploading...");
-
-    try {
-      const uploadData = new FormData();
-      uploadData.append("file", pdfFile);
-
-      // a) upload
-      const uploadRes = await fetch("http://127.0.0.1:8000/upload", {
-        method: "POST",
-        body: uploadData,
-      });
-      const { session_id } = await uploadRes.json();
-
-      // b) extract
-      await fetch("http://127.0.0.1:8000/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id }),
-      });
-
-      // c) generate
-      const genRes = await fetch("http://127.0.0.1:8000/generate-fields", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id }),
-      });
-      const genJson = await genRes.json();
-      const fields = genJson.fields || {};
-
-      // d) map JSON → form state (join bullets for keyFeatures)
-      setForm((prev) => ({
-        ...prev,
-        productId: fields["Product ID"] || prev.productId,
-        idType: fields["ID Type"] || prev.idType,
-        sku: fields["SKU"] || prev.sku,
-        productName: fields["Product name"] || prev.productName,
-        siteDescription: fields["Site description"] || prev.siteDescription,
-        keyFeatures: Array.isArray(fields["Key features"])
-          ? fields["Key features"].join("\n• ")
-          : fields["Key features"] || prev.keyFeatures,
-        brandName: fields["Brand name"] || prev.brandName,
-        fulfillmentOption:
-          fields["Fulfillment option"] || prev.fulfillmentOption,
-        condition: fields["Type of condition"] || prev.condition,
-        sellingPrice: fields["Selling Price"] || prev.sellingPrice,
-        imageUrl: Array.isArray(fields["Image URLs"])
-          ? fields["Image URLs"][0]
-          : fields["Image URLs"] || prev.imageUrl,
-      }));
-
-      setUploadMessage("Field extraction completed.");
-    } catch (err) {
-      console.error(err);
-      setUploadMessage("Upload or extraction failed.");
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  // Derived dropdown lists
-  const subcategories = form.category
-    ? Object.keys(categoriesData[form.category])
-    : [];
-  const productTypes = form.subcategory
-    ? categoriesData[form.category][form.subcategory]
-    : [];
-
+  // ----------- UI -----------
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
       <header className="bg-blue-600 text-white h-12 flex items-center justify-center font-semibold text-lg">
         Create item
       </header>
-
       <div className="flex flex-1 flex-col justify-between">
         <div className="flex flex-col lg:flex-row gap-4 px-4 py-6 max-w-[1280px] mx-auto w-full overflow-auto">
-          {/* ─── Left Panel ───────────────────────────────────────────────────────── */}
+          {/* Left Panel */}
           <div className="bg-white rounded shadow p-6 flex-1 space-y-6">
             {/* Product Identifiers */}
             <h2 className="text-lg font-semibold">Product Identifiers</h2>
@@ -216,9 +186,8 @@ export default function App() {
                 />
               </div>
             </div>
-
             <div>
-              <label className="block text-sm font-medium mb-1">SKU</label>
+              <label className="block text-sm font-semibold mb-1">SKU</label>
               <input
                 name="sku"
                 value={form.sku}
@@ -226,31 +195,8 @@ export default function App() {
                 className="border rounded w-full px-3 py-2 text-sm"
               />
             </div>
-
-            {/* Item Info */}
-            <h2 className="text-lg font-semibold">Item Info</h2>
-            {/* AI helper banner */}
-            <div className="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="font-semibold text-sm">
-                    Optimize your content with AI
-                  </p>
-                  <p className="text-xs text-gray-600">
-                    Use our AI to write product name, description and features.
-                    <a className="text-blue-600 ml-1 underline" href="#">
-                      Learn more
-                    </a>
-                  </p>
-                </div>
-                <button className="border border-black text-sm px-3 py-1 rounded-full hover:bg-gray-100">
-                  Help me write
-                </button>
-              </div>
-            </div>
-
             <div>
-              <label className="block text-sm font-medium mb-1">
+              <label className="block text-sm font-semibold mb-1">
                 Product name
               </label>
               <input
@@ -260,9 +206,8 @@ export default function App() {
                 className="border rounded w-full px-3 py-2 text-sm"
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium mb-1">
+              <label className="block text-sm font-semibold mb-1">
                 Site description
               </label>
               <textarea
@@ -273,80 +218,80 @@ export default function App() {
                 className="border rounded w-full px-3 py-2 text-sm"
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium mb-1">
+              <label className="block text-sm font-semibold mb-1">
                 Key Features
               </label>
               <textarea
                 name="keyFeatures"
                 value={form.keyFeatures}
                 onChange={handleChange}
-                placeholder="• "
+                placeholder="- "
                 className="border rounded w-full px-3 py-2 text-sm min-h-[100px]"
               />
             </div>
 
-            {/* Categorization */}
-            <h2 className="text-lg font-semibold">Categorization</h2>
+            {/* AI-powered Categorization */}
+            <h2 className="text-lg font-semibold">
+              Categorization (AI-powered)
+            </h2>
             <div>
-              <label className="block text-sm font-medium mb-1">Category</label>
+              <label className="block text-sm font-semibold mb-1">
+                Category
+              </label>
               <select
                 name="category"
                 value={form.category}
-                onChange={handleChange}
+                onChange={handleCategoryChange}
                 className="border rounded w-full px-3 py-2 text-sm"
+                disabled={llmLoading}
               >
                 <option value="">Select Category</option>
-                {Object.keys(categoriesData).map((c) => (
+                {categoryOptions.map((c) => (
                   <option key={c} value={c}>
                     {c}
                   </option>
                 ))}
               </select>
             </div>
-
-            {subcategories.length > 0 && (
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Subcategory
-                </label>
-                <select
-                  name="subcategory"
-                  value={form.subcategory}
-                  onChange={handleChange}
-                  className="border rounded w-full px-3 py-2 text-sm"
-                >
-                  <option value="">Select Subcategory</option>
-                  {subcategories.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {productTypes.length > 0 && (
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Product Type
-                </label>
-                <select
-                  name="productType"
-                  value={form.productType}
-                  onChange={handleChange}
-                  className="border rounded w-full px-3 py-2 text-sm"
-                >
-                  <option value="">Select Product Type</option>
-                  {productTypes.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <div>
+              <label className="block text-sm font-semibold mb-1">
+                Subcategory
+              </label>
+              <select
+                name="subcategory"
+                value={form.subcategory}
+                onChange={handleSubcategoryChange}
+                className="border rounded w-full px-3 py-2 text-sm"
+                disabled={llmLoading || !form.category}
+              >
+                <option value="">Select Subcategory</option>
+                {subcategoryOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">
+                Product Type
+              </label>
+              <select
+                name="productType"
+                value={form.productType}
+                onChange={handleProductTypeChange}
+                className="border rounded w-full px-3 py-2 text-sm"
+                disabled={llmLoading || !form.category || !form.subcategory}
+              >
+                <option value="">Select Product Type</option>
+                {productTypeOptions.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             {/* Brand Info */}
             <h2 className="text-lg font-semibold">Brand Info</h2>
@@ -417,7 +362,6 @@ export default function App() {
                   />
                 </svg>
               </h2>
-
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-1">
                   Selling Price
@@ -431,7 +375,6 @@ export default function App() {
                   className="border rounded w-full px-3 py-2 text-sm"
                 />
               </div>
-
               <div>
                 <label className="block text-sm font-medium mb-1">
                   Shipping Weight (lbs)
@@ -444,13 +387,12 @@ export default function App() {
               </div>
             </div>
           </div>
-
-          {/* ─── Right Preview Panel ─────────────────────────────────────────────── */}
+          {/* Right Preview Panel */}
           <div className="bg-white rounded shadow p-6 w-full lg:w-1/3 h-fit">
             <p className="text-sm text-gray-500 mb-2">Listing preview</p>
             <div className="flex justify-center items-center h-32 border border-dashed text-gray-300 mb-2">
               <img
-                src={previewImage || form.imageUrl || sampleImage}
+                src={form.imageUrl || sampleImage}
                 alt="Listing Preview"
                 className="h-full object-contain"
               />
@@ -461,46 +403,15 @@ export default function App() {
             <p className="text-sm text-gray-600">
               {form.sellingPrice ? `$ ${form.sellingPrice}` : "$ -"}
             </p>
-
-            {/* Uploads */}
-            <div className="mt-6">
-              <label className="block text-sm font-medium mb-1">
-                Upload Image
-              </label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="mb-2"
-              />
-
-              <label className="block text-sm font-medium mb-1">
-                Upload Product PDF
-              </label>
-              <input
-                type="file"
-                accept=".pdf"
-                onChange={handleFileChange}
-                className="mb-2"
-              />
-              <button
-                onClick={handleFileUpload}
-                disabled={uploading || !pdfFile}
-                className="bg-blue-600 text-white px-4 py-1 rounded text-sm hover:bg-blue-700 disabled:bg-gray-400"
-              >
-                {uploading ? "Uploading..." : "Upload & Extract"}
-              </button>
-              {uploadMessage && (
-                <p className="text-sm text-gray-500 mt-2">{uploadMessage}</p>
-              )}
-            </div>
           </div>
         </div>
-
         {/* Footer */}
         <footer className="flex justify-between items-center bg-white border-t px-8 py-4">
-          <button className="border border-black px-6 py-2 rounded-full text-sm hover:bg-gray-100">
-            Cancel
+          <button
+            className="border border-black px-6 py-2 rounded-full text-sm hover:bg-gray-100"
+            onClick={() => navigate("/")}
+          >
+            Back to Upload
           </button>
           <div className="space-x-3">
             <button className="bg-gray-200 text-gray-500 px-6 py-2 rounded-full text-sm cursor-not-allowed">
