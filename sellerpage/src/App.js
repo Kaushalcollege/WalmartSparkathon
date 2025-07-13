@@ -232,9 +232,7 @@ export default function App() {
             </div>
 
             {/* AI-powered Categorization */}
-            <h2 className="text-lg font-semibold">
-              Categorization (AI-powered)
-            </h2>
+            <h2 className="text-lg font-semibold">Categorisation</h2>
             <div>
               <label className="block text-sm font-semibold mb-1">
                 Category

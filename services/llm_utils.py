@@ -2,7 +2,7 @@ import os
 import re
 import requests
 
-# Load your GROQ API key from environment for security
+
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 def extract_structured_fields(response_text: str) -> dict:
@@ -12,10 +12,9 @@ def extract_structured_fields(response_text: str) -> dict:
     """
     fields = {}
 
-    # 1️⃣ Primary extraction: look for **Key**: Value lines
     matches = re.findall(r"\*\*(.*?)\*\*:\s*(.+)", response_text)
     if not matches:
-        # 2️⃣ Fallback extraction: plain Key: Value (multi-line support)
+
         matches = re.findall(r"^([\w &]+):\s*(.+)$", response_text, flags=re.MULTILINE)
 
     for key, value in matches:
@@ -48,6 +47,7 @@ Your job:
 3. If a field is absent, return "Not available".
 4. For fields with multiple values (like images, features), return one bullet per line.
 5. Output must be a pure key-value list, with **BOLD** keys and a colon for each, no extra text.
+6. Intelligently figure out the key features and the best features.
 
 **Fields (always output these, even if "Not available"):**
 
